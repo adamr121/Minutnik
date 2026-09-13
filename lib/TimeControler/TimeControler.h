@@ -12,21 +12,24 @@ public:
     void stop();
     void stepUp();
     void stepDown();
-    int getProgramTime() const;
-    int getTime(bool isFormatted = true) const;
-    unsigned long getProgramTime();
-    void setProgramTime(unsigned long time);
-    unsigned long getCurrentTime();
+    // Aktualnie liczacy czas w sekundach (podczas liczenia currentTime, inaczej programTime).
+    unsigned long getTimeSeconds() const;
+
+    // Czas gotowy dla wyswietlacza: MMSS, a przy godzinach HHMM.
+    int getFormattedTime() const;
+
+    unsigned long getProgramTime() const;
+    unsigned long getCurrentTime() const;
     void countDown();
     void countUp();
+    bool isStopper() const;
 
 private:
-    int getTimeStep(unsigned long time);
+    int getTimeStep(unsigned long time) const;
     unsigned long programTime;
     unsigned long currentTime;
 
     bool isCounting = false;
-    bool isStopper = true;
 };
 
 #endif // TIMECONTROLER_H

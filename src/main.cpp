@@ -48,7 +48,7 @@ void setState(State newState){
             case State::INIT:
                 timeControler.stop();
                 lastPosition = encoder.getPosition();
-                display.showNumberDecEx(timeControler.getTime(), dotOn, true);
+                display.showNumberDecEx(timeControler.getFormattedTime(), dotOn, true);
                 break;
             case State::MINUTNIK_CNT:
                 secondCounter.reset();
@@ -67,7 +67,7 @@ void setState(State newState){
             case State::MINUTNIK_PAUSE:
             case State::STOPER_PAUSE:
                 lastPosition = encoder.getPosition();
-                display.showNumberDecEx(timeControler.getTime(), dotOn, true);
+                display.showNumberDecEx(timeControler.getFormattedTime(), dotOn, true);
                 break;
             case State::FINISH:
                 finishExitTimer.reset();
@@ -84,7 +84,7 @@ void onPressed()
     switch (currentState)
     {
         case State::INIT:
-            if(timeControler.getProgramTime() == 0){
+            if(timeControler.isStopper()){
                 setState(State::STOPER_CNT);
             }
             else{
@@ -171,14 +171,14 @@ void loop()
                 }
                 
                 lastPosition = encoderPosition;
-                display.showNumberDecEx(timeControler.getTime(), dotOn, true);
+                display.showNumberDecEx(timeControler.getFormattedTime(), dotOn, true);
             }
             break;  
         case State::MINUTNIK_CNT:
 
             if(dotsCounter.isReady()){ 
                 displayDots = !displayDots;
-                display.showNumberDecEx(timeControler.getTime(), displayDots << 6, true);
+                display.showNumberDecEx(timeControler.getFormattedTime(), displayDots << 6, true);
             }
 
             if(secondCounter.isReady()){
@@ -187,17 +187,17 @@ void loop()
                     break;
                 }
                 timeControler.countDown();
-                display.showNumberDecEx(timeControler.getTime(), displayDots << 6, true);
+                display.showNumberDecEx(timeControler.getFormattedTime(), displayDots << 6, true);
             }
             break;
         case State::STOPER_CNT:
             if(secondCounter.isReady()){
                 timeControler.countUp();
-                display.showNumberDecEx(timeControler.getTime(), displayDots << 6, true);
+                display.showNumberDecEx(timeControler.getFormattedTime(), displayDots << 6, true);
             }
             if(dotsCounter.isReady()){
                 displayDots = !displayDots;
-                display.showNumberDecEx(timeControler.getTime(), displayDots << 6, true);
+                display.showNumberDecEx(timeControler.getFormattedTime(), displayDots << 6, true);
             }
             
             break;
@@ -209,7 +209,7 @@ void loop()
                 else                                timeControler.stepDown();
                 
                 lastPosition = encoderPosition;
-                display.showNumberDecEx(timeControler.getTime(), dotOn, true);
+                display.showNumberDecEx(timeControler.getFormattedTime(), dotOn, true);
             }
 
             break;
@@ -221,7 +221,7 @@ void loop()
                 else                                timeControler.stepDown();
                 
                 lastPosition = encoderPosition;
-                display.showNumberDecEx(timeControler.getTime(), dotOn, true);
+                display.showNumberDecEx(timeControler.getFormattedTime(), dotOn, true);
             }
             break;
         case State::FINISH:
@@ -230,7 +230,7 @@ void loop()
                     display.clear();
                 }
                 else{
-                    display.showNumberDecEx(timeControler.getTime(), dotOn, true);
+                    display.showNumberDecEx(timeControler.getFormattedTime(), dotOn, true);
                 }
                 shouldClear = !shouldClear;
             }

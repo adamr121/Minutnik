@@ -5,7 +5,6 @@ TimeControler::TimeControler(unsigned long programTime, unsigned long currentTim
 
 void TimeControler::start()
 {
-    isStopper = (programTime == 0);
     isCounting = true;
     currentTime = programTime;
 }
@@ -20,7 +19,7 @@ void TimeControler::stepUp()
     if(isCounting){
         unsigned long step = getTimeStep(currentTime);
         currentTime += step;
-        if(!isStopper){
+        if(!isStopper()){
             programTime += step;
         }
     }
@@ -35,7 +34,7 @@ void TimeControler::stepDown()
     if(isCounting){
         step = getTimeStep(currentTime);
         currentTime = (currentTime > step) ? currentTime - step : 0; 
-        if(!isStopper){
+        if(!isStopper()){
             programTime = (programTime > step) ? programTime - step : 0;
         }
     }
@@ -45,46 +44,31 @@ void TimeControler::stepDown()
     }
 }
 
-int TimeControler::getProgramTime() const
+unsigned long TimeControler::getTimeSeconds() const
+{
+    return isCounting ? currentTime : programTime;
+}
+
+int TimeControler::getFormattedTime() const
+{
+    unsigned long time = getTimeSeconds();
+
+    int seconds = time % 60;
+    int minutes = time / 60 % 60;
+    int hours   = time / 3600;
+
+    if(hours == 0){
+        return minutes * 100 + seconds;
+    }
+    return hours * 100 + minutes;
+}
+
+unsigned long TimeControler::getProgramTime() const
 {
     return programTime;
 }
 
-int TimeControler::getTime(bool isFormatted) const
-{   
-    unsigned long time = programTime;
-    if(isCounting){
-        time = currentTime;
-    }
-    if(isFormatted){
-        int seconds, minutes, hours;
-        seconds = time % 60;
-        minutes = time / 60 % 60;
-        hours = time / 3600;
-
-        int result;
-        if(hours == 0){
-            result = minutes*100 + seconds;
-        }    
-        else{
-            result = hours * 100 + minutes;
-        }
-        return result;
-    }
-    return time;
-}
-
-unsigned long TimeControler::getProgramTime()
-{
-    return programTime;
-}
-
-void TimeControler::setProgramTime(unsigned long time)
-{
-    programTime = time;
-}
-
-unsigned long TimeControler::getCurrentTime()
+unsigned long TimeControler::getCurrentTime() const
 {
     return currentTime;
 }
@@ -99,7 +83,12 @@ void TimeControler::countUp()
     currentTime++;
 }
 
-int TimeControler::getTimeStep(unsigned long time)
+bool TimeControler::isStopper() const
+{
+    return programTime == 0;
+}
+
+int TimeControler::getTimeStep(unsigned long time) const
 {
     //LOG_DEBUG("getTimeStep() programTime=" << programTime );
     int step;
