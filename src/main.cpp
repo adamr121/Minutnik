@@ -6,6 +6,7 @@
 #include <logger.h>
 #include <Timer.h>
 #include <EasyButton.h>
+#include "TimeControler.h"
 
 enum class State{
     INIT,
@@ -17,17 +18,15 @@ enum class State{
 };
 State currentState = static_cast<State>(-1);
 
-int programTime = 0;
-int currentTime = 0;
-
 Timer encoderTimer (5);
 Timer secondCounter (1000);
 Timer dotsCounter (500);
-Timer DoneBlinkTimer (500);
-Timer finishTimer (20000);
+Timer finishBlinkTimer (500);
+Timer finishExitTimer (20000);
 
 bool displayDots=true;
 bool shouldClear=true;
+uint8_t dotOn = 1 << 6;
 
 // hardware
 RotaryEncoder encoder (Pins::Encoder_A, Pins::Encoder_B, RotaryEncoder::LatchMode::FOUR3);
@@ -35,37 +34,8 @@ EasyButton btn (Pins::BUTTON);
 Adafruit_NeoPixel strip(1, Pins::LED, NEO_GRB + NEO_KHZ800);
 TM1637Display display(Pins::DISPLAY_CLK, Pins::DISPLAY_DIO);
 
-int getTimeStep(int programTime)
-{
-    LOG_DEBUG("getTimeStep() programTime=" << programTime );
-    int step;
-    if(programTime < 60* 2) step= 15;
-    else if(programTime < 60* 5) step= 30;
-    else if(programTime < 60* 30) step= 60;
-    else if(programTime < 60* 60) step= 60 * 5;
-    else step = 60 * 10;
-    LOG_DEBUG("return " << step );
-    return step;
-}
+TimeControler timeControler;
 
-int formatTime( int programTime){
-    LOG_DEBUG("formatTime() programTime=" << programTime );
-    
-    int seconds, minutes, hours;
-    seconds = programTime % 60;
-    minutes = programTime/60 % 60;
-    hours = programTime/3600;
-
-    int result;
-    if(hours == 0){
-        result = minutes*100 + seconds;
-    }    
-    else{
-        result = hours * 100 + minutes;
-    }
-    LOG_DEBUG("return " << result );
-    return result;
-}
 // Ostatnio widziana pozycja (do wykrywania zmiany)
 int lastPosition = 0;
 int encoderPosition;
@@ -76,31 +46,32 @@ void setState(State newState){
         switch (newState)
         {
             case State::INIT:
+                timeControler.stop();
                 lastPosition = encoder.getPosition();
-                display.showNumberDecEx(formatTime(programTime), 1 << 6, true);
+                display.showNumberDecEx(timeControler.getTime(), dotOn, true);
                 break;
             case State::MINUTNIK_CNT:
                 secondCounter.reset();
                 dotsCounter.reset();
                 if(currentState == State::INIT){
-                    currentTime = programTime;
+                    timeControler.start();
                 }
                 break;
             case State::STOPER_CNT:
                 secondCounter.reset();
                 dotsCounter.reset();
                 if(currentState == State::INIT){
-                    currentTime = programTime;
+                    timeControler.start();
                 }
                 break;
             case State::MINUTNIK_PAUSE:
             case State::STOPER_PAUSE:
                 lastPosition = encoder.getPosition();
-                display.showNumberDecEx(formatTime(currentTime), 1 << 6, true);
+                display.showNumberDecEx(timeControler.getTime(), dotOn, true);
                 break;
             case State::FINISH:
-                finishTimer.reset();
-                DoneBlinkTimer.reset();
+                finishExitTimer.reset();
+                finishBlinkTimer.reset();
                 shouldClear=false;
                 break;
         }
@@ -113,7 +84,7 @@ void onPressed()
     switch (currentState)
     {
         case State::INIT:
-            if(programTime == 0){
+            if(timeControler.getProgramTime() == 0){
                 setState(State::STOPER_CNT);
             }
             else{
@@ -192,36 +163,41 @@ void loop()
 
             if (encoderPosition != lastPosition) {
                 LOG_DEBUG("Zmiana pozycji enkodera");
-                if (lastPosition < encoderPosition) programTime += getTimeStep(programTime);
-                else if (programTime - getTimeStep(programTime) >= 0) programTime -= getTimeStep(programTime);
+                if (lastPosition < encoderPosition) {
+                    timeControler.stepUp();
+                }
+                else{
+                    timeControler.stepDown();
+                }
+                
                 lastPosition = encoderPosition;
-                display.showNumberDecEx(formatTime(programTime), 1 << 6, true);
+                display.showNumberDecEx(timeControler.getTime(), dotOn, true);
             }
             break;  
         case State::MINUTNIK_CNT:
 
             if(dotsCounter.isReady()){ 
                 displayDots = !displayDots;
-                display.showNumberDecEx(formatTime(currentTime), displayDots << 6, true);
+                display.showNumberDecEx(timeControler.getTime(), displayDots << 6, true);
             }
 
             if(secondCounter.isReady()){
-                if(currentTime == 0){
+                if(timeControler.getCurrentTime() == 0){
                     setState(State::FINISH);
                     break;
                 }
-                currentTime--;
-                display.showNumberDecEx(formatTime(currentTime), displayDots << 6, true);
+                timeControler.countDown();
+                display.showNumberDecEx(timeControler.getTime(), displayDots << 6, true);
             }
             break;
         case State::STOPER_CNT:
             if(secondCounter.isReady()){
-                currentTime++;
-                display.showNumberDecEx(formatTime(currentTime), displayDots << 6, true);
+                timeControler.countUp();
+                display.showNumberDecEx(timeControler.getTime(), displayDots << 6, true);
             }
             if(dotsCounter.isReady()){
-                display.showNumberDecEx(formatTime(currentTime), displayDots << 6, true);
                 displayDots = !displayDots;
+                display.showNumberDecEx(timeControler.getTime(), displayDots << 6, true);
             }
             
             break;
@@ -229,16 +205,11 @@ void loop()
             encoderPosition = encoder.getPosition();
 
             if (encoderPosition != lastPosition) {
-                if (lastPosition < encoderPosition) {
-                    currentTime += getTimeStep(currentTime);
-                    programTime += getTimeStep(currentTime);
-                }
-                else if (currentTime - getTimeStep(currentTime) >= 0) {
-                    currentTime -= getTimeStep(currentTime);
-                    programTime -= getTimeStep(currentTime);
-                }
+                if (lastPosition < encoderPosition) timeControler.stepUp();
+                else                                timeControler.stepDown();
+                
                 lastPosition = encoderPosition;
-                display.showNumberDecEx(formatTime(currentTime), 1 << 6, true);
+                display.showNumberDecEx(timeControler.getTime(), dotOn, true);
             }
 
             break;
@@ -246,26 +217,26 @@ void loop()
             encoderPosition = encoder.getPosition();
 
             if (encoderPosition != lastPosition) {
-                if (lastPosition < encoderPosition) currentTime += getTimeStep(currentTime);
-                else if (currentTime - getTimeStep(currentTime) >= 0) currentTime -= getTimeStep(currentTime);
+                if (lastPosition < encoderPosition) timeControler.stepUp();
+                else                                timeControler.stepDown();
+                
                 lastPosition = encoderPosition;
-                display.showNumberDecEx(formatTime(currentTime), 1 << 6, true);
+                display.showNumberDecEx(timeControler.getTime(), dotOn, true);
             }
             break;
         case State::FINISH:
-            if(DoneBlinkTimer.isReady()){
+            if(finishBlinkTimer.isReady()){
                 if(shouldClear) {
                     display.clear();
                 }
                 else{
-                    display.showNumberDecEx(formatTime(currentTime), 1 << 6, true);
+                    display.showNumberDecEx(timeControler.getTime(), dotOn, true);
                 }
                 shouldClear = !shouldClear;
             }
-            if(finishTimer.isReady()){
+            if(finishExitTimer.isReady()){
                 setState(State::INIT);
             }
             break;
     }
-
 }
