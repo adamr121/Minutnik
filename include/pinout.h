@@ -5,12 +5,13 @@
 
 
 namespace Pins{
+    constexpr uint8_t DISPLAY_DIO =  0;
+    constexpr uint8_t DISPLAY_CLK =  1;
+    constexpr uint8_t BUTTON    =  2;
+    constexpr uint8_t LED       =  4;
     constexpr uint8_t Encoder_A =  5;
     constexpr uint8_t Encoder_B =  6;
-    constexpr uint8_t LED       =  4;
-    constexpr uint8_t BUTTON    =  2;
-    constexpr uint8_t DISPLAY_CLK =  1;
-    constexpr uint8_t DISPLAY_DIO =  0;
+    constexpr uint8_t Buzzer    =  7;
 }
 
 #endif // __PINOUT_H__

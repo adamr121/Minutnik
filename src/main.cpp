@@ -1,12 +1,12 @@
 #include <Arduino.h>
 #include <pinout.h>
 #include <RotaryEncoder.h>
-#include <Adafruit_NeoPixel.h>
 #include <TM1637Display.h>
 #include <logger.h>
 #include <Timer.h>
 #include <EasyButton.h>
 #include "TimeControler.h"
+#include "MusicBox.h"
 
 enum class State{
     INIT,
@@ -18,7 +18,6 @@ enum class State{
 };
 State currentState = static_cast<State>(-1);
 
-Timer encoderTimer (5);
 Timer secondCounter (1000);
 Timer dotsCounter (500);
 Timer finishBlinkTimer (500);
@@ -31,8 +30,8 @@ uint8_t dotOn = 1 << 6;
 // hardware
 RotaryEncoder encoder (Pins::Encoder_A, Pins::Encoder_B, RotaryEncoder::LatchMode::FOUR3);
 EasyButton btn (Pins::BUTTON);
-Adafruit_NeoPixel strip(1, Pins::LED, NEO_GRB + NEO_KHZ800);
 TM1637Display display(Pins::DISPLAY_CLK, Pins::DISPLAY_DIO);
+MusicBox music (Pins::Buzzer);
 
 TimeControler timeControler;
 
@@ -43,6 +42,9 @@ int encoderPosition;
 void setState(State newState){
     
     if(currentState != newState){
+
+        if(currentState == State::FINISH) music.melodyStop();
+
         switch (newState)
         {
             case State::INIT:
@@ -73,6 +75,7 @@ void setState(State newState){
                 finishExitTimer.reset();
                 finishBlinkTimer.reset();
                 shouldClear=false;
+                music.melodyStart();   // Oda do radości, zapętlana
                 break;
         }
         currentState = newState;
@@ -126,35 +129,39 @@ void onLongPressed(){
     }
 }
 
+void IRAM_ATTR onEncoderSample(){
+    uint32_t in = REG_READ(GPIO_IN_REG);
+    encoder.tick((in >> Pins::Encoder_A) & 1, (in >> Pins::Encoder_B) & 1);
+}
+
 void setup()
 {
     Serial.begin(115200);
-
-    strip.begin();
-    strip.setBrightness(10);   // ogranicz jasność
-    strip.show();
 
     btn.begin();
     btn.onPressed(onPressed);
     btn.onPressedFor(1000, onLongPressed);
 
+    music.begin();
+    music.setMelody(Melody::PIRATES);
+   
+    // timer sprzetowy do obslugi enkodera
+    uint16_t timerPrescaler = 80;
+    uint64_t timerValue = 1000;
+    hw_timer_s *encTimer = timerBegin(0, timerPrescaler, true);
+    timerAttachInterrupt(encTimer, onEncoderSample, true);
+    timerAlarmWrite(encTimer, timerValue, true);
+    timerAlarmEnable(encTimer);
+
     display.setBrightness(1);  // jasność 0-7
     display.showNumberDec(0);  // wyczyść / pokaż startowe 0
     setState(State::INIT);
-    LOG_INFO("Encoder + LED start");
 }
 
 void loop()
 {
     btn.read();
-
-	if(encoderTimer.isReady())
-	{
-		uint32_t in = REG_READ(GPIO_IN_REG);
-		int sig1 = (in >> Pins::Encoder_A) & 1;
-		int sig2 = (in >> Pins::Encoder_B) & 1;
-		encoder.tick(sig1, sig2);
-	}
+    music.updatePlayNote();
 
     switch (currentState)
     {
@@ -164,9 +171,11 @@ void loop()
             if (encoderPosition != lastPosition) {
                 LOG_DEBUG("Zmiana pozycji enkodera");
                 if (lastPosition < encoderPosition) {
+                    music.playNote({Hz::A5, 100});
                     timeControler.stepUp();
                 }
                 else{
+                    music.playNote({Hz::A4, 100});
                     timeControler.stepDown();
                 }
                 
@@ -205,8 +214,14 @@ void loop()
             encoderPosition = encoder.getPosition();
 
             if (encoderPosition != lastPosition) {
-                if (lastPosition < encoderPosition) timeControler.stepUp();
-                else                                timeControler.stepDown();
+                if (lastPosition < encoderPosition) {
+                    timeControler.stepUp();
+                    music.playNote({Hz::A5, 100});
+                }
+                else {
+                    timeControler.stepDown();
+                    music.playNote({Hz::A4, 100});
+                }
                 
                 lastPosition = encoderPosition;
                 display.showNumberDecEx(timeControler.getFormattedTime(), dotOn, true);
@@ -217,14 +232,23 @@ void loop()
             encoderPosition = encoder.getPosition();
 
             if (encoderPosition != lastPosition) {
-                if (lastPosition < encoderPosition) timeControler.stepUp();
-                else                                timeControler.stepDown();
+                if (lastPosition < encoderPosition) 
+                {
+                    timeControler.stepUp();
+                    music.playNote({Hz::A5, 100});
+                }
+                else {
+                    timeControler.stepDown();
+                    music.playNote({Hz::A4, 100});
+                }
                 
                 lastPosition = encoderPosition;
                 display.showNumberDecEx(timeControler.getFormattedTime(), dotOn, true);
             }
             break;
         case State::FINISH:
+            music.melodyUpdate();
+
             if(finishBlinkTimer.isReady()){
                 if(shouldClear) {
                     display.clear();
