@@ -15,31 +15,32 @@ enum class State{
     STOPER_PAUSE,
     FINISH
 };
-State currentState;
+State currentState = static_cast<State>(-1);
 
 int programTime = 0;
 int currentTime = 0;
 
-RotaryEncoder encoder (Pins::Encoder_A, Pins::Encoder_B, RotaryEncoder::LatchMode::FOUR3);
-Timer encoderTimer (1);
+Timer encoderTimer (5);
 Timer secondCounter (1000);
 Timer dotsCounter (500);
 Timer DoneBlinkTimer (500);
+Timer finishTimer (20000);
+
 bool displayDots=true;
 bool shouldClear=true;
 
+// hardware
+RotaryEncoder encoder (Pins::Encoder_A, Pins::Encoder_B, RotaryEncoder::LatchMode::FOUR3);
 EasyButton btn (Pins::BUTTON);
-// 1 dioda WS2812 na pinie Pins::LED
 Adafruit_NeoPixel strip(1, Pins::LED, NEO_GRB + NEO_KHZ800);
-// Wyświetlacz 7-segmentowy TM1637
 TM1637Display display(Pins::DISPLAY_CLK, Pins::DISPLAY_DIO);
 
 int getTimeStep(int programTime)
 {
     LOG_DEBUG("getTimeStep() programTime=" << programTime );
     int step;
-    if(programTime < 60* 3) step= 15;
-    else if(programTime < 60* 7) step= 30;
+    if(programTime < 60* 2) step= 15;
+    else if(programTime < 60* 5) step= 30;
     else if(programTime < 60* 30) step= 60;
     else if(programTime < 60* 60) step= 60 * 5;
     else step = 60 * 10;
@@ -68,44 +69,71 @@ int formatTime( int programTime){
 // Ostatnio widziana pozycja (do wykrywania zmiany)
 int lastPosition = 0;
 int encoderPosition;
+
+void setState(State newState){
+    
+    if(currentState != newState){
+        switch (newState)
+        {
+            case State::INIT:
+                lastPosition = encoder.getPosition();
+                display.showNumberDecEx(formatTime(programTime), 1 << 6, true);
+                break;
+            case State::MINUTNIK_CNT:
+                secondCounter.reset();
+                dotsCounter.reset();
+                if(currentState == State::INIT){
+                    currentTime = programTime;
+                }
+                break;
+            case State::STOPER_CNT:
+                secondCounter.reset();
+                dotsCounter.reset();
+                if(currentState == State::INIT){
+                    currentTime = programTime;
+                }
+                break;
+            case State::MINUTNIK_PAUSE:
+            case State::STOPER_PAUSE:
+                lastPosition = encoder.getPosition();
+                display.showNumberDecEx(formatTime(currentTime), 1 << 6, true);
+                break;
+            case State::FINISH:
+                finishTimer.reset();
+                DoneBlinkTimer.reset();
+                shouldClear=false;
+                break;
+        }
+        currentState = newState;
+    }
+}
 // Wywoływane przy każdym wciśnięciu przycisku enkodera
 void onPressed()
 {
     switch (currentState)
     {
         case State::INIT:
-            secondCounter.reset();
-            dotsCounter.reset();
             if(programTime == 0){
-                currentState = State::STOPER_CNT;
-                currentTime = programTime;
+                setState(State::STOPER_CNT);
             }
             else{
-                currentState = State::MINUTNIK_CNT;
-                currentTime = programTime;
+                setState(State::MINUTNIK_CNT);
             }
             break;
         case State::MINUTNIK_CNT:
-            currentState = State::MINUTNIK_PAUSE;
-            display.showNumberDecEx(formatTime(currentTime), 1 << 6, true);
+            setState(State::MINUTNIK_PAUSE);
             break;
         case State::STOPER_CNT:
-            currentState = State::STOPER_PAUSE;
-            display.showNumberDecEx(formatTime(currentTime), 1 << 6, true);
+            setState(State::STOPER_PAUSE);
             break;
         case State::MINUTNIK_PAUSE:
-            secondCounter.reset();
-            dotsCounter.reset();
-            currentState = State::MINUTNIK_CNT;
+            setState(State::MINUTNIK_CNT);
             break;
         case State::STOPER_PAUSE:
-            secondCounter.reset();
-            dotsCounter.reset();
-            currentState = State::STOPER_CNT;
+            setState(State::STOPER_CNT);
             break;
         case State::FINISH:
-            currentState = State::INIT;
-            display.showNumberDecEx(formatTime(programTime), 1 << 6, true);
+            setState(State::INIT);
             break;
     }
 }
@@ -113,27 +141,20 @@ void onLongPressed(){
     switch (currentState)
     {
         case State::INIT:
-
             break;
         case State::MINUTNIK_CNT:
-
             break;
         case State::STOPER_CNT:
-
             break;
         case State::MINUTNIK_PAUSE:
-            currentState = State::INIT;
-            display.showNumberDecEx(formatTime(programTime), 1 << 6, true);
-            break;
         case State::STOPER_PAUSE:
-            currentState = State::INIT;
-            display.showNumberDecEx(formatTime(programTime), 1 << 6, true);
+            setState(State::INIT);  
             break;
         case State::FINISH:
-            
             break;
     }
 }
+
 void setup()
 {
     Serial.begin(115200);
@@ -148,9 +169,7 @@ void setup()
 
     display.setBrightness(1);  // jasność 0-7
     display.showNumberDec(0);  // wyczyść / pokaż startowe 0
-    currentState = State::INIT;
-
-    display.showNumberDecEx(programTime, 1 << 6, true);
+    setState(State::INIT);
     LOG_INFO("Encoder + LED start");
 }
 
@@ -181,23 +200,24 @@ void loop()
             break;  
         case State::MINUTNIK_CNT:
 
+            if(dotsCounter.isReady()){ 
+                displayDots = !displayDots;
+                display.showNumberDecEx(formatTime(currentTime), displayDots << 6, true);
+            }
+
             if(secondCounter.isReady()){
                 if(currentTime == 0){
-                    currentState = State::FINISH;
+                    setState(State::FINISH);
                     break;
                 }
                 currentTime--;
-            }
-
-            if(dotsCounter.isReady()){
                 display.showNumberDecEx(formatTime(currentTime), displayDots << 6, true);
-                displayDots = !displayDots;
             }
-            
             break;
         case State::STOPER_CNT:
             if(secondCounter.isReady()){
                 currentTime++;
+                display.showNumberDecEx(formatTime(currentTime), displayDots << 6, true);
             }
             if(dotsCounter.isReady()){
                 display.showNumberDecEx(formatTime(currentTime), displayDots << 6, true);
@@ -209,8 +229,14 @@ void loop()
             encoderPosition = encoder.getPosition();
 
             if (encoderPosition != lastPosition) {
-                if (lastPosition < encoderPosition) currentTime += getTimeStep(currentTime);
-                else if (currentTime - getTimeStep(currentTime) >= 0) currentTime -= getTimeStep(currentTime);
+                if (lastPosition < encoderPosition) {
+                    currentTime += getTimeStep(currentTime);
+                    programTime += getTimeStep(currentTime);
+                }
+                else if (currentTime - getTimeStep(currentTime) >= 0) {
+                    currentTime -= getTimeStep(currentTime);
+                    programTime -= getTimeStep(currentTime);
+                }
                 lastPosition = encoderPosition;
                 display.showNumberDecEx(formatTime(currentTime), 1 << 6, true);
             }
@@ -235,6 +261,9 @@ void loop()
                     display.showNumberDecEx(formatTime(currentTime), 1 << 6, true);
                 }
                 shouldClear = !shouldClear;
+            }
+            if(finishTimer.isReady()){
+                setState(State::INIT);
             }
             break;
     }
